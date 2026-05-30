@@ -216,3 +216,21 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Machine Learning / Project Specific ---
+# macOS
+.DS_Store
+
+# Data & Datasets
+hagrid_set*/
+hagrid_small/
+processed_hagrid_small/
+sample_preprocessed_outputs/
+*.zip
+*.npy
+*.csv
+
+# Model Checkpoints
+models/
+*.pth
+*.pt
