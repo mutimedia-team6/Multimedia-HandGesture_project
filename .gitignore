@@ -3,6 +3,7 @@
 /annotations.zip
 /__pycache__
 *.task
+format.py
 
 # Files from another branch
 full.ipynb
