@@ -39,12 +39,12 @@ class UltimateDataAugmentor:
         
         # 1. 隨機高斯模糊 (破解助教 Blur 考題)
         if random.random() < self.p_blur:
-            image = F.gaussian_blur(image, kernel_size=[5, 5], sigma=[0.1, 2.0])
+            image = F.gaussian_blur(image, kernel_size=[11, 11], sigma=[0.5, 2.5])
 
         # 2. 隨機顏色抖動 (增強真實環境光線魯棒性)
         if random.random() < self.p_color:
-            brightness_factor = random.uniform(0.7, 1.3) # 變暗到變亮
-            contrast_factor = random.uniform(0.7, 1.3)   # 對比度增減
+            brightness_factor = random.uniform(0.5, 1.5) # 變暗到變亮
+            contrast_factor = random.uniform(0.5, 1.5)   # 對比度增減
             image = F.adjust_brightness(image, brightness_factor)
             image = F.adjust_contrast(image, contrast_factor)
 
