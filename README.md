@@ -102,3 +102,5 @@ The parallel work streams will be integrated for final testing and fine-tuning. 
 
 ## Dataset Google Drive
 https://drive.google.com/drive/folders/1qHkqg_47XUhlyBu4aE3nqrSZnt-Ah5UC?usp=drive_link
+- hagrid_set_v1_medium: Totally 10.000images withe 5-target class: 1,000, 29 ono-target class: each 172, total 5,000.
+- hagrid_set_v3: Totally 100.000images withe 5-target class: 10,000, 29 ono-target class: each 1,724, total 50,000.
