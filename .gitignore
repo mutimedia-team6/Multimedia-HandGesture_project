@@ -1,0 +1,9 @@
+/data*
+/hagrid*
+/annotations.zip
+/__pycache__
+*.task
+
+# Files from another branch
+full.ipynb
+train.ipynb
