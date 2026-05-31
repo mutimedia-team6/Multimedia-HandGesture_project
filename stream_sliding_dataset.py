@@ -22,8 +22,8 @@ START_INDEX = 0
 TARGET_CATEGORIES = {'fist', 'like', 'ok', 'one', 'palm'}
 
 # 🎯 【10,000 張的黃金配額比例】
-MAX_PER_TARGET = 10000    # 每個目標類別 1000 張
-MAX_PER_NOISE = 1724       # 29個雜訊每個 172 張
+MAX_PER_TARGET = 1000    # 每個目標類別 1000 張
+MAX_PER_NOISE = 172       # 29個雜訊每個 172 張
 
 RANDOM_SEED = 0          # 固定隨機種子碼，確保全局打亂順序一致
 # ===============================================================
@@ -112,13 +112,13 @@ def main():
                     continue  # 沒抓到手直接放生
                     
                 crop_img, landmarks = result
-                crop_resized = cv2.resize(crop_img, (224, 224))
+                # crop_resized = cv2.resize(crop_img, (224, 224))
 
                 # 實體寫入
                 img_out_path = cat_output_dir / f"{final_base_name}.jpg"
                 npy_out_path = cat_output_dir / f"{final_base_name}.npy"
                 
-                cv2.imwrite(str(img_out_path), cv2.cvtColor(crop_resized, cv2.COLOR_RGB2BGR))
+                cv2.imwrite(str(img_out_path), cv2.cvtColor(crop_img, cv2.COLOR_RGB2BGR))
                 np.save(str(npy_out_path), landmarks)
 
                 saved_counters[cat_name] += 1

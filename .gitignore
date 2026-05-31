@@ -2,9 +2,10 @@
 /hagrid*
 /annotations.zip
 /__pycache__
+/processed*
 *.task
 format.py
 
 # Files from another branch
 full.ipynb
-train.ipynb
+dataset.ipynb

@@ -13,10 +13,10 @@ import pandas as pd  # 💡 新增：為了最後產出 labels.csv
 from hand_preprocess import MediaPipeHandPreprocessor 
 
 # ==================== 🛠️ 10000張滑塊控制面板 ====================
-ZIP_FILE_PATH = Path(r"D:/hagrid_project/hagridv2_512.zip")      
+ZIP_FILE_PATH = Path(r"/mnt/d/hagrid_project/hagridv2_512.zip")      
 
 # 💡 這次輸出後的資料夾，就是直接給 PyTorch 吃的終極版
-OUTPUT_DIR = Path(r"D:/hagrid_project/hagrid_set_v3_processed")     
+OUTPUT_DIR = Path(r"/mnt/d/hagrid_project/dataset_v2_processed")     
 START_INDEX = 0                                                            
 
 # 5 個專題指定的標準目標手勢
@@ -125,13 +125,13 @@ def main():
                     continue  # 沒抓到手直接放生
                     
                 crop_img, landmarks = result
-                crop_resized = cv2.resize(crop_img, (224, 224))
+                # crop_resized = cv2.resize(crop_img, (224, 224))
 
                 # 💡 實體寫入到新的扁平化資料夾
                 img_out_path = crop_dir / f"{final_base_name}.jpg"
                 npy_out_path = landmark_dir / f"{final_base_name}.npy"
                 
-                cv2.imwrite(str(img_out_path), cv2.cvtColor(crop_resized, cv2.COLOR_RGB2BGR))
+                cv2.imwrite(str(img_out_path), cv2.cvtColor(crop_img, cv2.COLOR_RGB2BGR))
                 np.save(str(npy_out_path), landmarks)
 
                 # 💡 將這筆成功的資料記錄到 CSV 名單中
