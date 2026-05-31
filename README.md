@@ -1,8 +1,3 @@
----
-title: README
-
----
-
 # Hand Gesture Classification Inference
 
 ## Overview
