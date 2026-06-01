@@ -3,10 +3,8 @@ import pandas as pd
 from pathlib import Path
 from PIL import Image
 from sklearn.model_selection import train_test_split
-
 import inference
-from heuristic import final_decision, assignment_raw_score
-
+from inference import final_decision, assignment_raw_score
 
 CLASS_NAMES = ["N/A", "fist", "like", "ok", "one", "palm"]
 SEED = 42
@@ -18,9 +16,9 @@ def fix_path(path_str, base_dir):
 
 
 def load_df():
-    csv_path = Path("processed_hagrid_small/labels.csv")
+    csv_path = Path("processed_hagrid_small/labels_fixed.csv")
     if not csv_path.exists():
-        raise FileNotFoundError("找不到 processed_hagrid_small/labels.csv")
+        raise FileNotFoundError("找不到 processed_hagrid_small/labels_fixed.csv")
 
     df = pd.read_csv(csv_path)
     base_dir = csv_path.parent
