@@ -3,6 +3,7 @@
 /annotations.zip
 /__pycache__
 /processed*
+/validation
 *.task
 format.py
 

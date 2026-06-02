@@ -98,7 +98,7 @@ class GestureFusionModel(nn.Module):
 _MODEL = None
 _DEVICE = torch.device("cpu")
 
-_MODEL_PATH = Path(__file__).resolve().parent / "model" / "fusion_mobilenetv3_landmark_best.pth"
+_MODEL_PATH = Path(__file__).resolve().parent / "model" / "fusion_mobilenetv3_landmark_aug14kdetect_best.pth"
 
 _IMAGE_TRANSFORM = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -530,11 +530,6 @@ def _preprocess_image(cropped_img: np.ndarray) -> torch.Tensor:
 
 
 def _preprocess_landmarks(landmarks: np.ndarray) -> torch.Tensor:
-    """
-    Match training code:
-    landmarks are loaded as raw np.float32 values and directly fed to the model.
-    No wrist-relative normalization is applied here.
-    """
     lm = np.asarray(landmarks, dtype=np.float32)
 
     if lm.ndim != 2 or lm.shape[0] != 21 or lm.shape[1] < 2:
@@ -542,9 +537,14 @@ def _preprocess_landmarks(landmarks: np.ndarray) -> torch.Tensor:
     else:
         lm_xy = lm[:, :2]
 
+        wrist = lm_xy[0, :]
+        lm_xy = lm_xy - wrist
+        max_dist = np.max(np.abs(lm_xy))
+        if max_dist > 0:
+            lm_xy = lm_xy / max_dist
+
     tensor = torch.tensor(lm_xy, dtype=torch.float32).unsqueeze(0)
     return tensor.to(_DEVICE)
-
 
 def _model_forward(cropped_img: np.ndarray, landmarks: np.ndarray) -> np.ndarray:
     model = _load_model_once()
@@ -557,7 +557,51 @@ def _model_forward(cropped_img: np.ndarray, landmarks: np.ndarray) -> np.ndarray
 
     return logits.squeeze(0).cpu().numpy()
 
+# -----------------------------------------------------------------------------
+# Optional scoring utility for validation tuning
+# -----------------------------------------------------------------------------
 
+def assignment_raw_score(y_true: np.ndarray, y_pred: np.ndarray) -> int:
+    """
+    Compute a raw score similar to the assignment rule.
+
+    Based on the spec:
+    - Correctly predicting a 5-class target: +1
+    - False trigger or misclassification: -2
+
+    We treat valid gesture -> N/A as 0 here because the spec emphasizes false
+    trigger penalty and does not clearly say that missed valid gestures are -2.
+    If your TA clarifies otherwise, update this function.
+    """
+    y_true = np.asarray(y_true, dtype=np.int64).reshape(-1)
+    y_pred = np.asarray(y_pred, dtype=np.int64).reshape(-1)
+
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true and y_pred must have the same shape.")
+
+    score = 0
+    for t, p in zip(y_true, y_pred):
+        t = int(t)
+        p = int(p)
+
+        if t in VALID_CLASSES:
+            if p == t:
+                score += 1
+            elif p == CLASS_NA:
+                score += 0
+            else:
+                score -= 2
+        elif t == CLASS_NA:
+            if p == CLASS_NA:
+                score += 0
+            else:
+                score -= 2
+        else:
+            # Unknown labels should not appear, but treat them as N/A-like.
+            if p != CLASS_NA:
+                score -= 2
+
+    return int(score)
 # ---------------------------------------------------------------------
 # Required interface
 # ---------------------------------------------------------------------
