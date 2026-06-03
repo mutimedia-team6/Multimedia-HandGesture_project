@@ -98,7 +98,7 @@ class GestureFusionModel(nn.Module):
 _MODEL = None
 _DEVICE = torch.device("cpu")
 
-_MODEL_PATH = Path(__file__).resolve().parent / "model" / "fusion_mobilenetv3_landmark_aug14kdetect_best.pth"
+_MODEL_PATH = Path(__file__).resolve().parent / "model" / "fusion_mobilenetv3_landmark_augnew15kdetect_best2_fp16.pth"
 
 _IMAGE_TRANSFORM = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -209,7 +209,29 @@ class HeuristicConfig:
             )
 
 
-DEFAULT_CONFIG = HeuristicConfig()
+DEFAULT_CONFIG = HeuristicConfig(
+    temperature=1.5,
+    max_entropy=1.45,
+    min_confidence={
+        CLASS_FIST: 0.45,
+        CLASS_LIKE: 0.45,
+        CLASS_OK: 0.45,
+        CLASS_ONE: 0.45,
+        CLASS_PALM: 0.55,
+    },
+    min_margin={
+        CLASS_FIST: 0.08,
+        CLASS_LIKE: 0.08,
+        CLASS_OK: 0.08,
+        CLASS_ONE: 0.08,
+        CLASS_PALM: 0.12,
+    },
+    use_landmark_rules=True,
+    reject_when_landmark_invalid=True,
+    ok_thumb_index_close=0.70,
+    palm_min_spread=0.55,
+    finger_extension_extra=-0.02,
+)
 
 
 def _as_numpy_1d(x: Union[np.ndarray, list, tuple]) -> np.ndarray:
@@ -471,6 +493,10 @@ def final_decision(
 
     if ent > config.max_entropy:
         debug["reason"] = f"high_entropy({ent:.3f} > {config.max_entropy:.3f})"
+        return (CLASS_NA, debug) if return_debug else CLASS_NA
+
+    if top_class == CLASS_PALM and ent > 1.10:
+        debug["reason"] = f"palm_high_entropy({ent:.3f})"
         return (CLASS_NA, debug) if return_debug else CLASS_NA
 
     if config.use_landmark_rules:
