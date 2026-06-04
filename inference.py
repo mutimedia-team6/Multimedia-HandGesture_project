@@ -32,7 +32,7 @@ class ShuffleNetV2FeatureExtractor(nn.Module):
 
         # Project 1024-D to output_dim
         self.projector = nn.Sequential(
-            LowRankLinear(1024, output_dim, rank=64),
+            LowRankLinear(1024, output_dim, rank=16),
             nn.ReLU(),
             nn.Dropout(0.2)
         )
@@ -89,7 +89,7 @@ class GestureFusionModel(nn.Module):
         fusion_dim = image_dim + landmark_dim
 
         self.classifier = nn.Sequential(
-            LowRankLinear(fusion_dim, 128, rank=64),
+            LowRankLinear(fusion_dim, 128, rank=16),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(128, num_classes),
@@ -110,7 +110,7 @@ class GestureFusionModel(nn.Module):
 _MODEL = None
 _DEVICE = torch.device("cpu")
 
-_MODEL_PATH = Path(__file__).resolve().parent / "model" / "fusion_shufflenetv2_lowrank_r64_fp16.pth"
+_MODEL_PATH = Path(__file__).resolve().parent / "model" / "fusion_shufflenetv2_lowrank_r16_fp16.pth"
 
 _IMAGE_TRANSFORM = transforms.Compose([
     transforms.Resize((224, 224)),
