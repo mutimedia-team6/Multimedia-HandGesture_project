@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torchvision.transforms.functional as F
 from PIL import Image
+import cv2
 
 class UltimateDataAugmentor:
     def __init__(self, 
@@ -12,7 +13,13 @@ class UltimateDataAugmentor:
                  p_flip=0.5,         # 水平翻轉的機率
                  max_rotate=15.0,    # 最大旋轉角度 (正負 15 度)
                  max_scale=0.05,     # 縮放比例 (0.05 代表 0.95x ~ 1.05x)
-                 max_translate=0.03  # 平移比例 (0.03 代表 3% 的 bbox jitter)
+                 max_translate=0.10,  # 平移比例 (0.03 代表 3% 的 bbox jitter)
+                 p_landmark_jitter=0.5, # 骨架抖動機率
+                 landmark_jitter_std=0.005, # 抖動的標準差 (0.005 代表 0.5% 的螢幕寬度誤差)
+                 p_cutout=0.3,          # 隨機遮擋機率
+                 cutout_size_pct=0.10,    # 遮擋方塊大小 (10% 的圖片寬高)
+                 p_motion_blur=0.3,     # 觸發動態模糊的機率 (建議設 0.3~0.5)
+                 motion_blur_size=15    # 殘影的長度，必須是奇數 (15 約為快速揮手的殘影)
                  ):
         self.p_blur = p_blur
         self.p_color = p_color
@@ -20,6 +27,12 @@ class UltimateDataAugmentor:
         self.max_rotate = max_rotate
         self.max_scale = max_scale
         self.max_translate = max_translate
+        self.p_landmark_jitter = p_landmark_jitter
+        self.landmark_jitter_std = landmark_jitter_std
+        self.p_cutout = p_cutout
+        self.cutout_size_pct = cutout_size_pct
+        self.p_motion_blur = p_motion_blur
+        self.motion_blur_size = motion_blur_size if motion_blur_size % 2 == 1 else motion_blur_size + 1
 
     def __call__(self, image: Image.Image, landmarks: np.ndarray):
         # 複製一份座標，避免改到原始資料
@@ -27,7 +40,7 @@ class UltimateDataAugmentor:
         w, h = image.size
 
         # ==========================================
-        # 第一關：純影像像素增強 (不動座標)
+        # 純影像像素增強 (不動座標)
         # ==========================================
         if random.random() < self.p_blur:
             image = F.gaussian_blur(image, kernel_size=[11, 11], sigma=[0.5, 2.5])
@@ -39,14 +52,32 @@ class UltimateDataAugmentor:
             image = F.adjust_contrast(image, contrast_factor)
 
         # ==========================================
-        # 第二關：隨機水平翻轉 (圖與點必須一起動)
+        # 動態模糊 (Motion Blur)
+        # ==========================================
+        if random.random() < self.p_motion_blur:
+            img_cv = np.array(image)
+            
+            k_size = self.motion_blur_size
+            kernel = np.zeros((k_size, k_size))
+            kernel[k_size // 2, :] = 1.0
+            
+            angle = random.uniform(0, 360)
+            M = cv2.getRotationMatrix2D((k_size / 2.0, k_size / 2.0), angle, 1)
+            kernel = cv2.warpAffine(kernel, M, (k_size, k_size))
+            kernel = kernel / np.sum(kernel)
+            img_cv = cv2.filter2D(img_cv, -1, kernel)
+            
+            image = Image.fromarray(img_cv)
+
+        # ==========================================
+        # 隨機水平翻轉 (圖與點必須一起動)
         # ==========================================
         if random.random() < self.p_flip:
             image = F.hflip(image)
             landmarks[:, 0] = 1.0 - landmarks[:, 0]
 
         # ==========================================
-        # 第三關：幾何同步增強 (旋轉、縮放、平移合一)
+        # 幾何同步增強 (旋轉、縮放、平移合一)
         # ==========================================
         # 1. 隨機生成本次要變換的參數
         angle = random.uniform(-self.max_rotate, self.max_rotate) if self.max_rotate > 0 else 0
@@ -74,8 +105,8 @@ class UltimateDataAugmentor:
             
             # --- 【座標端】像素級數學矩陣同步變換 ---
             # 步驟 A: 將 0~1 的相對座標轉換為「真實像素座標」
-            # pixel_landmarks = landmarks * np.array([w, h])
-            pixel_landmarks = (landmarks * np.array([w, h])).astype(int)
+            pixel_landmarks = landmarks * np.array([w, h])
+            # pixel_landmarks = (landmarks * np.array([w, h])).astype(int)
             
             # 定義旋轉中心為圖片的正中央 (像素座標)
             cx, cy = w // 2, h // 2
@@ -102,9 +133,35 @@ class UltimateDataAugmentor:
             landmarks = pixel_landmarks / np.array([w, h])
 
         # ==========================================
-        # 第四關：安全邊界防護
+        # 骨架獨立抖動 (Landmark Jitter)
         # ==========================================
-        # 確保經過平移、旋轉、縮放後，點不會因為浮點數誤差跑出 0.0 ~ 1.0 的範圍
+        # 模擬 MediaPipe 偵測不準確的微小飄移 (只動座標，不動影像)
+        if random.random() < self.p_landmark_jitter:
+            # 產生與 landmarks 形狀相同的隨機常態分佈雜訊
+            noise = np.random.normal(0, self.landmark_jitter_std, landmarks.shape)
+            landmarks = landmarks + noise
+
+        # ==========================================
+        # 隨機遮擋 (Random Cutout)
+        # ==========================================
+        # 強迫模型不依賴單一手指特徵
+        if random.random() < self.p_cutout:
+            w, h = image.size
+            cut_w, cut_h = int(w * self.cutout_size_pct), int(h * self.cutout_size_pct)
+            
+            # 隨機決定遮擋區塊的左上角座標
+            x1 = random.randint(0, w - cut_w)
+            y1 = random.randint(0, h - cut_h)
+            
+            # 使用 PyTorch 的 erase 畫上黑色方塊 (需將 PIL 轉 Tensor 再轉回)
+            # 為了輕量，這裡直接用 PIL 的 ImageDraw
+            from PIL import ImageDraw
+            draw = ImageDraw.Draw(image)
+            draw.rectangle([x1, y1, x1 + cut_w, y1 + cut_h], fill="black")
+
+        # ==========================================
+        # 安全邊界防護
+        # ==========================================
         landmarks = np.clip(landmarks, 0.0, 1.0)
 
         return image, landmarks
