@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from PIL import Image
 from torchvision import transforms
-from torchvision.models import mobilenet_v3_small
+from torchvision.models import shufflenet_v2_x0_5
 
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
@@ -16,7 +16,7 @@ from typing import Dict, Optional, Tuple, Union
 # Model definition: must match training notebook
 # ---------------------------------------------------------------------
 
-class MobileNetV3SmallFeatureExtractor(nn.Module):
+class ShuffleNetV2FeatureExtractor(nn.Module):
     def __init__(self, output_dim=128):
         super().__init__()
 
@@ -24,22 +24,24 @@ class MobileNetV3SmallFeatureExtractor(nn.Module):
         # Use weights=None during inference.
         # The checkpoint already contains the trained weights, so we should not
         # download ImageNet weights in the official Colab runtime.
-        backbone = mobilenet_v3_small(weights=None)
+        self.backbone = shufflenet_v2_x0_5(weights=None)
 
-        self.features = backbone.features
-        self.avgpool = backbone.avgpool
+        # Replace the final fully connected layer with an Identity layer
+        # because the input to fc is 1024-D
+        self.backbone.fc = nn.Identity()
 
+        # Project 1024-D to output_dim
         self.projector = nn.Sequential(
-            nn.Linear(576, output_dim),
+            LowRankLinear(1024, output_dim, rank=16),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.2)
         )
 
     def forward(self, x):
-        x = self.features(x)
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.projector(x)
+        # Input: image tensor of shape [B, 3, H, W]
+        # Output: feature vector of shape [B, output_dim]
+        x = self.backbone(x) # -> [B, 1024]
+        x = self.projector(x) # -> [B, output_dim]
         return x
 
 
@@ -65,19 +67,29 @@ class LandmarkMLP(nn.Module):
             landmarks = landmarks.view(landmarks.size(0), -1)
 
         return self.mlp(landmarks)
+    
+class LowRankLinear(nn.Module):
+    def __init__(self, in_features, out_features, rank, bias=True):
+        super().__init__()
+
+        self.fc1 = nn.Linear(in_features, rank, bias=False)
+        self.fc2 = nn.Linear(rank, out_features, bias=bias)
+
+    def forward(self, x):
+        return self.fc2(self.fc1(x))
 
 
 class GestureFusionModel(nn.Module):
     def __init__(self, image_dim=128, landmark_dim=128, num_classes=6):
         super().__init__()
 
-        self.image_encoder = MobileNetV3SmallFeatureExtractor(output_dim=image_dim)
+        self.image_encoder = ShuffleNetV2FeatureExtractor(output_dim=image_dim)
         self.landmark_encoder = LandmarkMLP(output_dim=landmark_dim)
 
         fusion_dim = image_dim + landmark_dim
 
         self.classifier = nn.Sequential(
-            nn.Linear(fusion_dim, 128),
+            LowRankLinear(fusion_dim, 128, rank=16),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(128, num_classes),
@@ -98,7 +110,7 @@ class GestureFusionModel(nn.Module):
 _MODEL = None
 _DEVICE = torch.device("cpu")
 
-_MODEL_PATH = Path(__file__).resolve().parent / "model" / "fusion_mobilenetv3_landmark_augnew15kdetect_best2_fp16.pth"
+_MODEL_PATH = Path(__file__).resolve().parent / "model" / "fusion_shufflenetv2_lowrank_r16_fp16.pth"
 
 _IMAGE_TRANSFORM = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -211,26 +223,24 @@ class HeuristicConfig:
 
 DEFAULT_CONFIG = HeuristicConfig(
     temperature=1.5,
-    max_entropy=1.45,
+    max_entropy=1.35,
     min_confidence={
         CLASS_FIST: 0.45,
         CLASS_LIKE: 0.45,
         CLASS_OK: 0.45,
         CLASS_ONE: 0.45,
-        CLASS_PALM: 0.55,
+        CLASS_PALM: 0.65,
     },
     min_margin={
-        CLASS_FIST: 0.08,
-        CLASS_LIKE: 0.08,
-        CLASS_OK: 0.08,
-        CLASS_ONE: 0.08,
+        CLASS_FIST: 0.05,
+        CLASS_LIKE: 0.05,
+        CLASS_OK: 0.05,
+        CLASS_ONE: 0.05,
         CLASS_PALM: 0.12,
     },
-    use_landmark_rules=True,
-    reject_when_landmark_invalid=True,
-    ok_thumb_index_close=0.70,
-    palm_min_spread=0.55,
-    finger_extension_extra=-0.02,
+    ok_thumb_index_close=0.65,
+    palm_min_spread=0.65,
+    finger_extension_extra=0.05,
 )
 
 
@@ -439,7 +449,7 @@ def landmark_rule_pass(
         return close_ratio < config.ok_thumb_index_close
 
     if pred_class == CLASS_ONE:
-        return index and not middle and not ring and not pinky
+        return index and long_count
 
     if pred_class == CLASS_PALM:
         spread = finger_spread_ratio(lm)
@@ -491,6 +501,10 @@ def final_decision(
         debug["reason"] = f"low_margin({margin:.3f} < {min_margin:.3f})"
         return (CLASS_NA, debug) if return_debug else CLASS_NA
 
+    if second_class == CLASS_NA and margin < 0.10:
+        debug["reason"] = f"second_is_NA_close_margin({margin:.3f})"
+        return (CLASS_NA, debug) if return_debug else CLASS_NA
+
     if ent > config.max_entropy:
         debug["reason"] = f"high_entropy({ent:.3f} > {config.max_entropy:.3f})"
         return (CLASS_NA, debug) if return_debug else CLASS_NA
@@ -530,6 +544,46 @@ def _load_model_once():
 # ---------------------------------------------------------------------
 # Preprocessing
 # ---------------------------------------------------------------------
+
+def _pad_to_square_and_resize(
+    cropped_img: np.ndarray,
+    landmarks: np.ndarray,
+    target_size: int = 224,
+):
+    img = np.asarray(cropped_img)
+    if img.ndim == 2:
+        img = np.stack([img, img, img], axis=-1)
+    if img.shape[-1] == 4:
+        img = img[..., :3]
+    if img.dtype != np.uint8:
+        if img.max() <= 1.0:
+            img = img * 255.0
+        img = np.clip(img, 0, 255).astype(np.uint8)
+
+    pil_img = Image.fromarray(img).convert("RGB")
+    w, h = pil_img.size
+
+    # 對齊 training：先 scale，再 pad 到正方形
+    scale = target_size / max(w, h)
+    new_w, new_h = int(w * scale), int(h * scale)
+    resized_img = pil_img.resize((new_w, new_h), Image.Resampling.BILINEAR)
+
+    square_img = Image.new("RGB", (target_size, target_size), (0, 0, 0))
+    pad_x = (target_size - new_w) // 2
+    pad_y = (target_size - new_h) // 2
+    square_img.paste(resized_img, (pad_x, pad_y))
+
+    # landmark 座標對齊 training（輸入是 normalized 0~1）
+    lm = np.asarray(landmarks, dtype=np.float32)
+    if lm.ndim != 2 or lm.shape[0] != 21 or lm.shape[1] < 2:
+        lm_out = np.zeros((21, 2), dtype=np.float32)
+    else:
+        lm_out = lm.copy()
+        lm_out[:, 0] = (lm_out[:, 0] * w * scale + pad_x) / target_size
+        lm_out[:, 1] = (lm_out[:, 1] * h * scale + pad_y) / target_size
+        lm_out = np.clip(lm_out, 0.0, 1.0)
+
+    return np.array(square_img), lm_out
 
 def _preprocess_image(cropped_img: np.ndarray) -> torch.Tensor:
     """
@@ -644,6 +698,12 @@ def predict(cropped_img: np.ndarray, landmarks: np.ndarray) -> int:
         4 = one
         5 = palm
     """
+    cropped_img, landmarks = _pad_to_square_and_resize(
+        cropped_img,
+        landmarks,
+        target_size=224,
+    )
+
     model_output = _model_forward(cropped_img, landmarks)
 
     pred = final_decision(
