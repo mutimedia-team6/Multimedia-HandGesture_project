@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Dataset
+dataset_v3_processed_detected/
+processed_hagrid_small/
+hagrid_small/
+
