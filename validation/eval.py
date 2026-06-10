@@ -25,7 +25,7 @@ def main():
     # 🌟 測試設定區 (Test Configuration)
     # ==========================================
     # 開啟這個開關，就會對每一張測試圖片與座標「加料」
-    SIMULATE_NOISE = False
+    SIMULATE_NOISE = True
     
     if SIMULATE_NOISE:
         print("🌪️ [警告] 已啟動『抗噪模擬測試模式』！")

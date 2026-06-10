@@ -7,7 +7,6 @@
 *.task
 format.py
 
-
 # Files from another branch
 full.ipynb
 dataset.ipynb

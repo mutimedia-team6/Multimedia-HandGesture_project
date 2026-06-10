@@ -5,6 +5,7 @@ import torch
 import torchvision.transforms.functional as F
 from PIL import Image
 import cv2
+cv2.setNumThreads(0)
 
 class UltimateDataAugmentor:
     def __init__(self, 
