@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手勢辨識 Demo — Team 16</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0e0e10;
+    --surface: #18181b;
+    --surface2: #1f1f23;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #f4f4f5;
+    --muted: #a1a1aa;
+    --hint: #71717a;
+    --purple: #8b83f7;
+    --purple-dim: rgba(139,131,247,0.15);
+    --green: #4ade80;
+    --green-dim: rgba(74,222,128,0.12);
+    --amber: #fbbf24;
+    --red: #f87171;
+    --radius: 12px;
+    --radius-sm: 7px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', 'SF Pro Display', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* ── top bar ── */
+  header {
+    width: 100%;
+    max-width: 960px;
+    padding: 28px 24px 0;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--purple-dim);
+    color: var(--purple);
+    border: 1px solid rgba(139,131,247,0.25);
+  }
+
+  /* ── main layout ── */
+  main {
+    width: 100%;
+    max-width: 960px;
+    padding: 20px 24px 40px;
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 16px;
+    align-items: start;
+  }
+
+  /* ── video panel ── */
+  .video-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .video-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    background: #000;
+  }
+  #videoEl {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    display: block;
+  }
+  #overlayCanvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    transform: scaleX(-1);
+    pointer-events: none;
+  }
+
+  /* gesture overlay on video */
+  #videoGesture {
+    position: absolute;
+    bottom: 14px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(0,0,0,0.65);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border2);
+    border-radius: 999px;
+    padding: 8px 20px 8px 14px;
+    opacity: 0; transition: opacity 0.2s;
+    pointer-events: none;
+  }
+  #videoGesture.visible { opacity: 1; }
+  #vgEmoji { font-size: 26px; line-height: 1; }
+  #vgName { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: #fff; }
+
+  .video-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+  }
+  .status {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--muted);
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--hint); flex-shrink: 0;
+  }
+  .dot.green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.amber { background: var(--amber); animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  #startBtn {
+    font-size: 13px; font-weight: 500;
+    padding: 7px 16px;
+    background: var(--purple-dim);
+    color: var(--purple);
+    border: 1px solid rgba(139,131,247,0.3);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  #startBtn:hover { background: rgba(139,131,247,0.22); }
+  #startBtn:active { transform: scale(0.97); }
+  #startBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── right panel ── */
+  .right-panel { display: flex; flex-direction: column; gap: 12px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .card-label {
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--hint); margin-bottom: 12px;
+  }
+
+  /* result */
+  .result-big {
+    display: flex; align-items: center; gap: 14px;
+  }
+  #rEmoji { font-size: 44px; line-height: 1; }
+  .result-text {}
+  #rName {
+    font-size: 24px; font-weight: 700;
+    letter-spacing: -0.03em; color: var(--text);
+    line-height: 1;
+  }
+  #rName.na { color: var(--hint); font-size: 16px; font-weight: 400; }
+  #rReason {
+    font-size: 11px; color: var(--hint);
+    margin-top: 4px;
+  }
+
+  /* prob bars */
+  .prob-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .prob-row:last-child { margin-bottom: 0; }
+  .pl { font-size: 11px; color: var(--muted); width: 38px; text-align: right; flex-shrink: 0; }
+  .pt { flex: 1; height: 5px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .pf { height: 100%; border-radius: 3px; background: #534AB7; transition: width 0.12s ease; }
+  .pf.top { background: var(--purple); }
+  .pv { font-size: 10px; color: var(--hint); width: 34px; text-align: right; flex-shrink: 0; }
+
+  /* debug */
+  .debug-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .debug-cell {
+    background: var(--surface2); border-radius: var(--radius-sm);
+    padding: 8px 10px;
+  }
+  .dc-label { font-size: 10px; color: var(--hint); margin-bottom: 2px; }
+  .dc-val { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+
+  .reason-pill {
+    display: inline-block; font-size: 11px; padding: 3px 9px;
+    border-radius: 999px; margin-top: 8px;
+  }
+  .reason-ok { background: var(--green-dim); color: var(--green); border: 1px solid rgba(74,222,128,0.2); }
+  .reason-reject { background: rgba(248,113,113,0.1); color: var(--red); border: 1px solid rgba(248,113,113,0.2); }
+
+  /* finger states */
+  .fingers { display: flex; gap: 5px; flex-wrap: wrap; }
+  .fp {
+    font-size: 11px; padding: 4px 9px;
+    border-radius: 999px; border: 1px solid var(--border2);
+    color: var(--hint); transition: all 0.1s;
+  }
+  .fp.ext { background: var(--purple-dim); color: var(--purple); border-color: rgba(139,131,247,0.3); }
+
+  /* loading overlay */
+  #loadOverlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(4px);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px; z-index: 100;
+  }
+  #loadOverlay.hidden { display: none; }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border2);
+    border-top-color: var(--purple);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loadMsg { font-size: 14px; color: var(--muted); }
+
+  @media (max-width: 700px) {
+    main { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loadOverlay">
+  <div class="spinner"></div>
+  <div id="loadMsg">載入中...</div>
+</div>
+
+<header>
+  <h1>手勢辨識</h1>
+  <span class="badge">Team 16</span>
+</header>
+
+<main>
+  <!-- left: video -->
+  <div class="video-panel">
+    <div class="video-wrap">
+      <video id="videoEl" autoplay playsinline muted></video>
+      <canvas id="overlayCanvas"></canvas>
+      <div id="videoGesture">
+        <span id="vgEmoji">✋</span>
+        <span id="vgName">—</span>
+      </div>
+    </div>
+    <div class="video-footer">
+      <div class="status">
+        <div class="dot amber" id="statusDot"></div>
+        <span id="statusText">點擊啟動攝影機</span>
+      </div>
+      <button id="startBtn">啟動攝影機</button>
+    </div>
+  </div>
+
+  <!-- right: info -->
+  <div class="right-panel">
+
+    <div class="card">
+      <div class="card-label">辨識結果</div>
+      <div class="result-big">
+        <span id="rEmoji">✋</span>
+        <div class="result-text">
+          <div id="rName" class="na">等待中</div>
+          <div id="rReason"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">各類別機率</div>
+      <div id="probBars"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">模型數值</div>
+      <div class="debug-grid">
+        <div class="debug-cell">
+          <div class="dc-label">entropy</div>
+          <div class="dc-val" id="dEnt">—</div>
+        </div>
+        <div class="debug-cell">
+          <div class="dc-label">margin</div>
+          <div class="dc-val" id="dMargin">—</div>
+        </div>
+        <div class="debug-cell">
+          <div class="dc-label">top prob</div>
+          <div class="dc-val" id="dTopProb">—</div>
+        </div>
+        <div class="debug-cell">
+          <div class="dc-label">2nd prob</div>
+          <div class="dc-val" id="dSecProb">—</div>
+        </div>
+      </div>
+      <div id="dReason"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">手指狀態</div>
+      <div class="fingers" id="fingerStates">
+        <span class="fp" id="fp-thumb">thumb</span>
+        <span class="fp" id="fp-index">index</span>
+        <span class="fp" id="fp-middle">middle</span>
+        <span class="fp" id="fp-ring">ring</span>
+        <span class="fp" id="fp-pinky">pinky</span>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<!-- ONNX Runtime Web -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+
+<script>
+"use strict";
+// ── constants ────────────────────────────────────────────────────────────────
+const GESTURES = {
+  0:{name:"N/A",   emoji:"❓"},
+  1:{name:"fist",  emoji:"✊"},
+  2:{name:"like",  emoji:"👍"},
+  3:{name:"ok",    emoji:"👌"},
+  4:{name:"one",   emoji:"☝️"},
+  5:{name:"palm",  emoji:"🖐️"},
+};
+const CLASS_NAMES = ["N/A","fist","like","ok","one","palm"];
+const VALID = [1,2,3,4,5];
+const MIN_CONF   = {1:0.45, 2:0.45, 3:0.45, 4:0.42, 5:0.65};
+const MIN_MARGIN = {1:0.05, 2:0.05, 3:0.05, 4:0.03, 5:0.12};
+const TEMP=1.5, MAX_ENT=1.35, OK_TI=0.65, PALM_SPREAD=0.65, EXT_EXTRA=0.05;
+const FJ = {
+  thumb:[1,2,3,4], index:[5,6,7,8],
+  middle:[9,10,11,12], ring:[13,14,15,16], pinky:[17,18,19,20]
+};
+const LONG = ["index","middle","ring","pinky"];
+
+// ── math helpers ─────────────────────────────────────────────────────────────
+function softmax(arr, T=1.5) {
+  const z = arr.map(v => v/T);
+  const mx = Math.max(...z);
+  const e = z.map(v => Math.exp(v-mx));
+  const s = e.reduce((a,b)=>a+b, 0);
+  return e.map(v => v/s);
+}
+function entropy(p) { return -p.reduce((s,v)=>s+v*Math.log(v+1e-8), 0); }
+function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
+function angleDeg(a,b,c) {
+  const ba={x:a.x-b.x,y:a.y-b.y}, bc={x:c.x-b.x,y:c.y-b.y};
+  const d = Math.max(Math.hypot(ba.x,ba.y)*Math.hypot(bc.x,bc.y), 1e-8);
+  return Math.acos(Math.min(1,Math.max(-1,(ba.x*bc.x+ba.y*bc.y)/d)))*180/Math.PI;
+}
+
+// ── landmark geometry ────────────────────────────────────────────────────────
+function palmScale(lm) {
+  return Math.max(dist(lm[0],lm[9]), dist(lm[5],lm[17]), 1e-6);
+}
+function palmCenter(lm) {
+  const pts=[0,5,9,13,17];
+  return {x:pts.reduce((s,i)=>s+lm[i].x,0)/5, y:pts.reduce((s,i)=>s+lm[i].y,0)/5};
+}
+function fingerExtended(lm, f) {
+  const s = palmScale(lm);
+  if(f==="thumb") {
+    const [,,ip,tip]=FJ.thumb, c=palmCenter(lm);
+    return dist(lm[tip],c)>dist(lm[ip],c)+EXT_EXTRA*s
+        && dist(lm[tip],lm[0])>dist(lm[ip],lm[0])+0.02*s;
+  }
+  const [mcp,pip,dip,tip]=FJ[f];
+  return angleDeg(lm[mcp],lm[pip],lm[dip])>145
+      && angleDeg(lm[pip],lm[dip],lm[tip])>140
+      && dist(lm[tip],lm[0])>dist(lm[pip],lm[0])+EXT_EXTRA*s;
+}
+function fingerStates(lm) {
+  return Object.fromEntries(
+    ["thumb","index","middle","ring","pinky"].map(f=>[f,fingerExtended(lm,f)])
+  );
+}
+function longCount(st) { return LONG.filter(f=>st[f]).length; }
+
+function landmarkRulePass(cls, lm) {
+  if(cls===0) return true;
+  const st=fingerStates(lm); const lc=longCount(st);
+  const ti = dist(lm[4],lm[8])/palmScale(lm);
+  const spread = dist(lm[8],lm[20])/palmScale(lm);
+  if(cls===1) return lc<=1;
+  if(cls===2) return st.thumb && lc<=1;
+  if(cls===3) return ti < OK_TI;
+  if(cls===4) return st.index && lc<=2;
+  if(cls===5) {
+    if(!(st.index&&st.middle&&st.ring&&st.pinky)) return false;
+    if(spread>0.70) return true;
+    return st.thumb && spread>PALM_SPREAD;
+  }
+  return false;
+}
+
+// ── heuristic decision ───────────────────────────────────────────────────────
+function heuristicDecision(logits6, lm) {
+  const probs = softmax(logits6, TEMP);
+  const ord = [...probs.map((p,i)=>({p,i}))].sort((a,b)=>b.p-a.p);
+  const top=ord[0], sec=ord[1];
+  const margin = top.p - sec.p;
+  const ent = entropy(probs);
+  const dbg = {probs, top_class:top.i, top_prob:top.p, sec_class:sec.i, sec_prob:sec.p, margin, entropy:ent, reason:"accepted"};
+
+  const reject = (r) => { dbg.reason=r; return {cls:0, dbg}; };
+  if(top.i===0)           return reject("model_top_is_NA");
+  if(!VALID.includes(top.i)) return reject("invalid_top_class");
+  if(top.p<(MIN_CONF[top.i]??0.75)) return reject(`low_conf(${top.p.toFixed(3)})`);
+  if(margin<(MIN_MARGIN[top.i]??0.15)) return reject(`low_margin(${margin.toFixed(3)})`);
+  if(sec.i===0&&margin<0.10) return reject("NA_close_margin");
+  if(ent>MAX_ENT)         return reject(`high_entropy(${ent.toFixed(3)})`);
+  if(top.i===5&&ent>1.00) return reject("palm_high_entropy");
+  if(lm&&!landmarkRulePass(top.i,lm)) return reject("landmark_rule_failed");
+  return {cls:top.i, dbg};
+}
+
+// ── preprocessing (matches inference.py exactly) ─────────────────────────────
+function preprocessLandmarks(rawLm, imgW, imgH) {
+  let lm = rawLm.map(p => ({x:p.x*imgW, y:p.y*imgH}));
+  const wx=lm[0].x, wy=lm[0].y;
+  lm = lm.map(p => ({x:p.x-wx, y:p.y-wy}));
+  const maxD = Math.max(...lm.map(p=>Math.max(Math.abs(p.x),Math.abs(p.y))), 1e-6);
+  return lm.map(p => ({x:p.x/maxD, y:p.y/maxD}));
+}
+
+// ── ONNX session ─────────────────────────────────────────────────────────────
+let onnxSession = null;
+
+async function loadModel() {
+  setLoadMsg("載入 ONNX 模型...");
+  try {
+    onnxSession = await ort.InferenceSession.create("model/landmark_only.onnx", {
+      executionProviders: ["wasm"],
+    });
+    console.log("✅ ONNX model loaded");
+  } catch(e) {
+    console.warn("ONNX load failed, using geometric fallback:", e.message);
+    onnxSession = null;
+  }
+}
+
+async function modelForward(normLm) {
+  if(onnxSession) {
+    const flat = new Float32Array(normLm.flatMap(p=>[p.x,p.y]));
+    const tensor = new ort.Tensor("float32", flat, [1,42]);
+    const out = await onnxSession.run({landmarks: tensor});
+    return Array.from(out.logits.data);
+  }
+  // geometric fallback (no .onnx file present)
+  const st=fingerStates(normLm); const lc=longCount(st);
+  const ti=dist(normLm[4],normLm[8])/palmScale(normLm);
+  const sp=dist(normLm[8],normLm[20])/palmScale(normLm);
+  const scores=[0.5,0,0,0,0,0];
+  if(lc<=1&&!st.thumb) scores[1]+=3.5;
+  if(st.thumb&&lc<=1)  scores[2]+=3.5;
+  if(ti<0.5)           scores[3]+=3.0;
+  if(st.index&&lc<=2)  scores[4]+=3.0;
+  if(lc>=4&&sp>0.6)    scores[5]+=3.5;
+  return scores.map(v=>v+(Math.random()-0.5)*0.4);
+}
+
+// ── UI helpers ───────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function setLoadMsg(m) { $("loadMsg").textContent = m; }
+function hideOverlay() { $("loadOverlay").classList.add("hidden"); }
+
+function initProbBars() {
+  $("probBars").innerHTML = CLASS_NAMES.map((n,i)=>
+    `<div class="prob-row">
+       <span class="pl">${n}</span>
+       <div class="pt"><div class="pf" id="pf${i}" style="width:0"></div></div>
+       <span class="pv" id="pv${i}">0%</span>
+     </div>`
+  ).join("");
+}
+
+function updateUI(cls, dbg, normLm) {
+  const g = GESTURES[cls] ?? GESTURES[0];
+
+  // video overlay
+  const vg = $("videoGesture");
+  if(cls!==0){ vg.classList.add("visible"); $("vgEmoji").textContent=g.emoji; $("vgName").textContent=g.name; }
+  else        { vg.classList.remove("visible"); }
+
+  // result card
+  $("rEmoji").textContent = g.emoji;
+  const rn=$("rName");
+  if(cls===0){ rn.textContent=dbg.reason??"N/A"; rn.className="na"; $("rReason").textContent=""; }
+  else       { rn.textContent=g.name; rn.className=""; $("rReason").textContent=""; }
+
+  // prob bars
+  const tc = dbg.top_class ?? 0;
+  (dbg.probs??new Array(6).fill(0)).forEach((p,i)=>{
+    const pct=(p*100).toFixed(1);
+    const f=$(`pf${i}`), v=$(`pv${i}`);
+    if(f){ f.style.width=pct+"%"; f.className="pf"+(i===tc?" top":""); }
+    if(v) v.textContent=pct+"%";
+  });
+
+  // debug
+  $("dEnt").textContent    = (dbg.entropy??0).toFixed(3);
+  $("dMargin").textContent = (dbg.margin??0).toFixed(3);
+  $("dTopProb").textContent= (dbg.top_prob??0).toFixed(3);
+  $("dSecProb").textContent= (dbg.sec_prob??0).toFixed(3);
+  const ok = dbg.reason==="accepted";
+  $("dReason").innerHTML = `<span class="reason-pill ${ok?"reason-ok":"reason-reject"}">${dbg.reason??"—"}</span>`;
+
+  // finger states
+  if(normLm&&normLm.length===21){
+    const st=fingerStates(normLm);
+    ["thumb","index","middle","ring","pinky"].forEach(f=>{
+      const el=$(`fp-${f}`);
+      if(el) el.className="fp"+(st[f]?" ext":"");
+    });
+  }
+}
+
+// ── MediaPipe + camera ───────────────────────────────────────────────────────
+const videoEl=$("videoEl"), overlayCanvas=$("overlayCanvas");
+const ctx=overlayCanvas.getContext("2d");
+
+async function onResults(results) {
+  overlayCanvas.width  = videoEl.videoWidth  || 640;
+  overlayCanvas.height = videoEl.videoHeight || 480;
+  ctx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+
+  if(!results.multiHandLandmarks?.length){
+    updateUI(0,{reason:"no_hand",probs:new Array(6).fill(0),entropy:0,margin:0,top_prob:0,sec_prob:0,top_class:0},null);
+    $("statusText").textContent="偵測中 — 將手放入畫面";
+    return;
+  }
+
+  const rawLm = results.multiHandLandmarks[0];
+  drawConnectors(ctx, rawLm, HAND_CONNECTIONS, {color:"rgba(139,131,247,0.6)", lineWidth:2});
+  drawLandmarks(ctx, rawLm, {color:"rgba(139,131,247,1)", lineWidth:1, radius:3});
+
+  const w=overlayCanvas.width, h=overlayCanvas.height;
+  const normLm = preprocessLandmarks(rawLm, w, h);
+  const logits  = await modelForward(normLm);
+  const {cls, dbg} = heuristicDecision(logits, normLm);
+
+  updateUI(cls, dbg, normLm);
+  $("statusDot").className="dot green";
+  $("statusText").textContent="✓ 偵測到手部";
+}
+
+// ── init ──────────────────────────────────────────────────────────────────────
+initProbBars();
+
+$("startBtn").addEventListener("click", async () => {
+  $("startBtn").disabled=true;
+  $("statusText").textContent="請求攝影機權限...";
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:"user", width:{ideal:640}, height:{ideal:480}}
+    });
+    videoEl.srcObject=stream;
+    await new Promise(r=>videoEl.onloadedmetadata=r);
+    videoEl.play();
+
+    $("loadOverlay").classList.remove("hidden");
+    setLoadMsg("載入 MediaPipe...");
+
+    const hands = new Hands({
+      locateFile: f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+    });
+    hands.setOptions({maxNumHands:1, modelComplexity:1, minDetectionConfidence:0.6, minTrackingConfidence:0.5});
+    hands.onResults(onResults);
+
+    await loadModel();
+    hideOverlay();
+
+    const camera = new Camera(videoEl, {
+      onFrame: async () => { await hands.send({image:videoEl}); },
+      width:640, height:480
+    });
+    camera.start();
+
+    $("startBtn").style.display="none";
+    $("statusDot").className="dot amber";
+    $("statusText").textContent="偵測中 — 將手放入畫面";
+
+  } catch(e) {
+    hideOverlay();
+    $("statusText").textContent="錯誤："+e.message;
+    $("startBtn").disabled=false;
+  }
+});
+
+// hide initial loading overlay (it's only for ONNX loading triggered by button)
+hideOverlay();
+</script>
+</body>
+</html>

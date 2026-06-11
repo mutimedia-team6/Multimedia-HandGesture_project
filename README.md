@@ -1,102 +1,73 @@
-# Hand Gesture Classification on Edge Devices
+# Hand Gesture Classification Inference
 
-This project focuses on building a hand gesture classification system that can run efficiently on edge devices. The system combines image-based visual features and hand landmark features to classify hand gestures while keeping the model lightweight enough for deployment.
+## Overview
 
-## Team
+This submission implements a compact hand gesture classifier for six classes:
 
-- 黃湘晴
-- 韋妍伃
-- 陳穎達
-- 游宇宸
+| Class ID | Meaning |
+| -------: | ------- |
+|        0 | N/A     |
+|        1 | fist    |
+|        2 | like    |
+|        3 | ok      |
+|        4 | one     |
+|        5 | palm    |
 
-## Project Goal
+The classifier takes two inputs:
 
-The goal is to classify hand gestures using a compact deep learning model suitable for edge-device deployment. The system is designed to balance classification accuracy, model size, and inference efficiency.
+1. `cropped_img`: an RGB cropped hand image as a NumPy array.
+2. `landmarks`: 21 hand landmarks as a NumPy array.
 
-## System Pipeline
+The model uses a MobileNetV3-small image branch and a landmark MLP branch. The two feature vectors are concatenated and passed through a final classifier.
 
-The proposed pipeline contains three main parts:
+## File Structure
 
-1. Data augmentation
-2. Model training
-3. Heuristic-based uncertainty handling
+The submitted zip file should follow this structure:
 
-## Data Augmentation
+```text
+team_X.zip
+├── inference.py
+├── model/
+│   └── fusion_mobilenetv3_landmark_best.pth
+├── requirements.txt
+└── README.md
+```
 
-### Image-Stream Augmentation
+## Environment
 
-The image input stream uses augmentation methods to improve robustness:
+This inference code is intended to run in a fresh Google Colab runtime.
 
-- Gaussian blur
-- Color jitter
-  - Brightness adjustment
-  - Contrast adjustment
-  - Saturation adjustment
+Install dependencies with:
 
-### Landmark-Stream Augmentation
+```bash
+pip install -r requirements.txt
+```
 
-The landmark input stream uses augmentation on the 21 hand joint coordinates:
+## Usage
 
-- Random translation: globally shifts all 21 landmark coordinates by a small random offset.
-- Random scaling: uniformly scales the landmark coordinates relative to the wrist base point.
+The evaluator should call the `predict()` function in `inference.py`:
 
-## Model Training
+```python
+from inference import predict
 
-The system uses both image features and landmark features.
+pred = predict(cropped_img, landmarks)
+```
 
-### Image Processing
+The return value is an integer class ID:
 
-Two training strategies will be evaluated, and the better-performing method will be selected as the final image model.
+```text
+0 = N/A
+1 = fist
+2 = like
+3 = ok
+4 = one
+5 = palm
+```
 
-- Lightweight ImageNet-pretrained model
-  - Use transfer learning and fine-tuning on a small pretrained model.
-- Large model followed by compression
-  - Train a larger teacher model, then distill it into a smaller student model.
+## Notes
 
-### Landmark Processing
-
-The 21 hand landmarks are fed into a multilayer perceptron (MLP) to extract landmark-based features.
-
-### Classification
-
-The feature vectors from the image model and the landmark MLP are concatenated. A fully connected classifier is then applied with focal loss, and Softmax is used to output 6-class probabilities.
-
-## Heuristic Rules
-
-To improve reliability, the system applies heuristic checks before returning a final prediction.
-
-1. Confidence thresholding
-   - Return `N/A` when the model prediction confidence is too low.
-2. Probability margin check
-   - Return `N/A` when the top prediction is too close to the second-best prediction.
-3. Entropy thresholding
-   - Return `N/A` when the Softmax output entropy is too high, indicating uncertainty across all classes.
-4. Landmark-based gesture rules
-   - Return `N/A` when the predicted gesture does not match the expected hand landmark geometry.
-
-## Research Methodology
-
-### 1. Literature Review and Baseline Analysis
-
-We will conduct a literature review to analyze existing approaches and prior research. This phase aims to understand current solutions and establish a theoretical baseline for the system.
-
-### 2. Concurrent Development and Task Allocation
-
-To accelerate development, the team will divide the workload and execute three core tasks in parallel:
-
-- Data augmentation
-- Model training
-- Heuristic algorithm design
-
-### 3. System Integration and Model Optimization
-
-The parallel work streams will be integrated for final testing and fine-tuning. The main objective is to maximize model accuracy while minimizing the model footprint.
-
-## Schedule
-
-| Date | Milestone |
-| --- | --- |
-| 6/2 | Finish individual parts |
-| 6/6 | Finish first-stage system integration and model optimization |
-| 6/11 | Finish final presentation and final model |
+* The model checkpoint is loaded from `model/fusion_mobilenetv3_landmark_best.pth`.
+* All paths are relative to `inference.py`.
+* The inference code runs on CPU by default for compatibility with the official evaluation environment.
+* ImageNet weights are not downloaded during inference; the submitted checkpoint already contains the trained model weights.
 
